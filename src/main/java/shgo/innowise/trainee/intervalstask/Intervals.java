@@ -26,8 +26,13 @@ public class Intervals {
     private static final String ASCENDING = "asc";
     private static final String DESCENDING = "dsc";
 
+    private static final int MAX_ARRAY_LENGTH = 3;
+    private static final int MIN_ARRAY_LENGTH = 2;
+
     // note's pattern for intervalConstruction method
-    private static final Pattern intervalConstructionNotePattern = Pattern.compile("^[A-G](#?|b?)$");
+    private static final Pattern intervalConstructionNotePattern;
+    // note's pattern for intervalIdentification method
+    private static final Pattern intervalIdentificationNotePattern;
 
     // map contains semitone for every interval
     private static final Map<String, Integer> intervalsSemitonesMap;
@@ -39,6 +44,9 @@ public class Intervals {
     private static final Map<String, Integer> orderStepMap;
 
     static {
+        intervalConstructionNotePattern = Pattern.compile("^[A-G](#?|b?)$");
+        intervalIdentificationNotePattern = Pattern.compile("^[A-G](#{0,2}|b{0,2})$");
+
         intervalsSemitonesMap = Map.ofEntries(
                 entry(MINOR_SECOND, 1),
                 entry(MAJOR_SECOND, 2),
@@ -81,21 +89,21 @@ public class Intervals {
      * Calculates note that comes in intervals from a given.
      *
      * @param args - array of arguments:
-     *             args[1] - interval name
-     *             args[2] - starting note
-     *             args[3] (optional) - building order type (ascending and descending)
+     *             args[0] - interval name
+     *             args[1] - starting note
+     *             args[2] (optional) - building order type (ascending and descending)
      * @return note name
      */
     public static String intervalConstruction(final String[] args) {
 
         // parsing and validating
-        if (args.length > 3 || args.length < 2) {
+        if (args.length > MAX_ARRAY_LENGTH || args.length < MIN_ARRAY_LENGTH) {
             throw new IllegalArgumentException("Illegal number of elements in input array");
         }
 
         final String interval = args[0];
         final String startNote = args[1];
-        final String order = args.length == 3 ? args[2] : ASCENDING;
+        final String order = args.length == MAX_ARRAY_LENGTH ? args[2] : ASCENDING;
 
         Integer step = orderStepMap.get(order);
         if (step == null) {
@@ -115,7 +123,7 @@ public class Intervals {
         // note position without semitones
         final int startNotePosition = notes.indexOf(startNote.substring(0, 1));
         // start note's semitones
-        final int startNoteSemitone = startNote.length() > 1 ? getNoteSemitone(startNote) : 0;
+        final int startNoteSemitone = startNote.length() > 1 ? getNoteSemitones(startNote) : 0;
 
         // calculation of end note position
         int currentPosition = startNotePosition;
@@ -157,8 +165,83 @@ public class Intervals {
         return getNoteWithSemitones(notes.get(currentPosition), endNoteSemitones);
     }
 
-    public static String intervalIdentification(String[] args) {
-        return null;
+    /**
+     * Identifies an interval.
+     *
+     * @param args - array of arguments:
+     *             args[0] - start note
+     *             args[1] - end note
+     *             args[2] (optional) - building order type (ascending and descending)
+     * @return interval name
+     */
+    public static String intervalIdentification(final String[] args) {
+
+        // parsing and validating
+        if (args.length > MAX_ARRAY_LENGTH || args.length < MIN_ARRAY_LENGTH) {
+            throw new IllegalArgumentException("Illegal number of elements in input array");
+        }
+
+        final String startNote = args[0];
+        final String endNote = args[1];
+        final String order = args.length == MAX_ARRAY_LENGTH ? args[2] : ASCENDING;
+
+        final Integer step = orderStepMap.get(order);
+        if (step == null) {
+            throw new IllegalArgumentException("Order is invalid");
+        }
+
+        if (!intervalIdentificationNotePattern.matcher(startNote).matches()) {
+            throw new IllegalArgumentException("Start note is invalid");
+        }
+        if (!intervalIdentificationNotePattern.matcher(endNote).matches()) {
+            throw new IllegalArgumentException("End note is invalid");
+        }
+
+        // start note position without semitones
+        final int startNotePosition = notes.indexOf(startNote.substring(0, 1));
+        // start note's semitones
+        final int startNoteSemitones = getNoteSemitones(startNote);
+        // end note position without semitones
+        final int endNotePosition = notes.indexOf(endNote.substring(0, 1));
+        // end note's semitones
+        final int endNoteSemitones = getNoteSemitones(endNote);
+
+        // calculation of semitones number between notes without notes semitones
+        int currentPosition = startNotePosition;
+        int intervalSemitones = 0;
+        while (currentPosition != endNotePosition) {
+            currentPosition += step;
+
+            // cycled list implementation
+            if (currentPosition < 0) {
+                currentPosition = notes.size() + currentPosition;
+            }
+            if (currentPosition >= notes.size()) {
+                currentPosition = currentPosition - notes.size();
+            }
+
+            // calculate semitones
+            if (notes.get(currentPosition).equals("")) {
+                intervalSemitones++;
+            }
+        }
+
+        // consider the semitones of the notes
+        if (order.equals(ASCENDING)) {
+            intervalSemitones += endNoteSemitones - startNoteSemitones;
+        } else {
+            intervalSemitones += startNoteSemitones - endNoteSemitones;
+        }
+
+        // looking for a suitable interval
+        final int finalIntervalSemitones = intervalSemitones;
+        var requiredInterval = intervalsSemitonesMap.entrySet().stream()
+                .filter((entry) -> entry.getValue() == finalIntervalSemitones)
+                .findFirst();
+        if (requiredInterval.isEmpty()) {
+            throw new RuntimeException("Cannot identify the interval");
+        }
+        return requiredInterval.get().getKey();
     }
 
     /**
@@ -181,10 +264,10 @@ public class Intervals {
      *
      * @param note - note name with semitones (like 'Bbb')
      * @return number of semitone:
-     * < 0 if it's lowering;
-     * > 0 if it's raising
+     *      < 0 if it's lowering;
+     *      > 0 if it's raising
      */
-    private static int getNoteSemitone(final String note) {
+    private static int getNoteSemitones(final String note) {
         // first calculate raising semitones
         int semitone = countMatches(note, "#");
         if (semitone == 0) {
